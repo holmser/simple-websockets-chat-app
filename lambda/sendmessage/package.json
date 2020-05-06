@@ -6,6 +6,7 @@
   "author": "SAM CLI",
   "license": "MIT",
   "dependencies": {
+    "amazon-dax-client": "^1.2.4",
     "aws-sdk": "^2.434.0"
   }
 }

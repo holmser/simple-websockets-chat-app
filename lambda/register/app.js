@@ -1,5 +1,8 @@
 const jwt = require("jsonwebtoken");
 const AWS = require("aws-sdk");
+const https = require("https");
+var jwkToPem = require('jwk-to-pem');
+const log = require('lambda-log-json');
 
 const ddb = new AWS.DynamoDB.DocumentClient({
   apiVersion: "2012-08-10",
@@ -18,6 +21,22 @@ const { TABLE_NAME, DEBUG } = process.env;
 //   endpoint: endpoint
 // });
 
+async function httpGet(url, callback, jwtToken) {
+  return new Promise((resolve, reject) => {
+    https.get(url, res => {
+      res.setEncoding("utf8");
+      let body = "";
+      res.on("data", data => {
+        body += data;
+      });
+      res.on("end", () => {
+        body = JSON.parse(body);
+        resolve(body)
+      });
+    });
+  })
+}
+
 async function getConnId(uuid) {
   var params = {
     KeyConditionExpression: 'PartitionKey = :uuid AND begins_with(SortKey, :role)',
@@ -31,80 +50,9 @@ async function getConnId(uuid) {
   results = await ddb
     .query(params)
     .promise();
-  // console.log("AdminID: ", results.Items)
+  // log.info("AdminID: ", results.Items)
   return results.Items[0]
 }
-// const DEBUG = true
-
-// async function getAdminConnId() {
-//   var params = {
-//     KeyConditionExpression: 'PartitionKey = :role AND begins_with ( SortKey , :connid )',
-//     ExpressionAttributeValues: {
-//       ':role': "role:ADMIN",
-//       ':connid': "cid"
-//     },
-//     TableName: TABLE_NAME
-//   };
-
-//   results = await ddb
-//     .query(params)
-//     .promise();
-//   //console.log("AdminID: ", results.Items[0].cid)
-//   return results.Items[0]
-// }
-
-// async function getCurrentSessions(adminId, userConnId) {
-//   console.log(adminId, userConnId)
-//   var params = {
-//     KeyConditionExpression: 'PartitionKey = :userid AND SortKey = :adminid',
-//     ExpressionAttributeValues: {
-//       ':userid': `wsid:${userConnId}`,
-//       ':adminid': `wsid:${adminId.cid}`
-//     },
-//     TableName: TABLE_NAME
-//   };
-//   result = await ddb
-//     .query(params)
-//     .promise();
-//   console.log("results:", result)
-//   return result
-// }
-
-// async function addAdminSession(adminData, userConnId) {
-
-//   let sessions = await getCurrentSessions(adminData, userConnId)
-//   time = Date.now()
-//   console.log(time)
-//   console.log("addAdminSession", "no current sessions found")
-//   item = {
-//     PartitionKey: `awsid:${adminData.cid}`,
-//     SortKey: `cwsid:${userConnId}`,
-//     cid: adminData.SortKey,
-//     timestamp: time,
-//   }
-//   const putParams = {
-//     TableName: process.env.TABLE_NAME,
-//     Item: item,
-//   };
-//   await ddb.put(putParams).promise();
-// }
-
-// async function addUserSession(event, adminId, userData) {
-//   const apigwManagementApi = new AWS.ApiGatewayManagementApi({
-//     apiVersion: "2018-11-29",
-//     endpoint: event.requestContext.domainName + "/" + event.requestContext.stage
-//   });
-
-//   let payload = JSON.stringify({
-//     event: "connchange",
-//     userdata: userData
-//   });
-//   if (!DEBUG) {
-//     await apigwManagementApi
-//       .postToConnection({ ConnectionId: adminId, Data: payload })
-//       .promise();
-//   }
-// }
 
 async function getHistory(uuid) {
   var params = {
@@ -124,15 +72,15 @@ async function getHistory(uuid) {
   //   TableName: TABLE_NAME
   // };
   connId = await getConnId('admin')
-  console.log(connId.cid)
+  log.info(connId.cid)
   results = await ddb
     .scan(params)
     .promise();
-  //console.log("AdminID: ", results.Items[0].cid)
+  //log.info("AdminID: ", results.Items[0].cid)
 
   for (i = 0; i < results.Items.length; i++) {
     payload = results.Items[i].message
-    console.log(payload)
+    log.info(payload)
     apigwManagementApi
       .postToConnection({ ConnectionId: connId.cid, Data: JSON.stringify(payload) })
       .promise();
@@ -141,36 +89,71 @@ async function getHistory(uuid) {
 async function sendMessages(payload) {
 
 }
+async function validateJwt(token) {
+  test = jwt.decode(token, { complete: true })
+  log.info(test)
+  jwtKeys = await httpGet(`${test.payload.iss}/.well-known/jwks.json`)
+  //log.info(jwtKeys)
+
+  signingKey = jwtKeys.keys.find(key => key.kid === test.header.kid)
+  log.info("signingKey", signingKey)
+  var pem = jwkToPem(signingKey);
+  log.info(pem)
+  validate = jwt.verify(token, pem, { algorithms: ['RS256'] })
+  return validate
+
+}
+
+async function writeToDdb(uuid, role, cid) {
+  return ddb.put({
+    TableName: process.env.TABLE_NAME,
+    Item: {
+      PartitionKey: `uuid:${uuid}`,
+      SortKey: `role:${role}`,
+      cid: cid,
+      uuid: uuid
+    }
+  }).promise()
+}
+
 exports.handler = async event => {
-  //await getHistory("admin")
   let connectionData;
   let item;
   let adminData
   let items = []
+
+
   try {
-    const decodedToken = jwt.decode(JSON.parse(event.body).token);
-    console.log("Admin Registration Detected: ", decodedToken)
+    // log.info(event)
+    const decodedToken = jwt.decode(JSON.parse(event.body).token, { complete: true });
+    //log.info("decoded Token ", decodedToken)
+    token = JSON.parse(event.body).token
+    log.info("Validated Token: ", await validateJwt(token))
+    // log.info("Admin Registration Detected: ", decodedToken)
+    log.info("success")
+    // await writeToDdb("admin", "admin", event.requestContext.connectionId)
     await ddb.put({
       TableName: process.env.TABLE_NAME,
       Item: {
         PartitionKey: `uuid:admin`,
         SortKey: `role:admin`,
         cid: event.requestContext.connectionId,
-        uuid: `${decodedToken.sub}`
+        uuid: `${decodedToken.payload.sub}`
       }
     }).promise()
     await ddb.put({
       TableName: process.env.TABLE_NAME,
       Item: {
-        PartitionKey: `uuid:${decodedToken.sub}`,
+        PartitionKey: `uuid:${decodedToken.payload.sub}`,
         SortKey: `role:admin`,
         cid: event.requestContext.connectionId,
       }
     }).promise()
   } catch (err) {
-    console.log(err)
+    log.info(err)
+    log.info("fail")
     data = JSON.parse(event.body)
-    console.log(data)
+    // log.info(data)
     await ddb.put({
       TableName: process.env.TABLE_NAME,
       Item: {
@@ -180,16 +163,8 @@ exports.handler = async event => {
         SortKey: `role:user`,
       }
     }).promise()
+
   }
-
-  // const res = await items.map(async function (item) {
-  //   // console.log(items)
-  //   const putParams = { TableName: process.env.TABLE_NAME, Item: item }
-  //   console.log(putParams)
-  //   return await ddb.put(putParams).promise()
-
-  // })
-  // console.log(res)
   return { statusCode: 200, body: "Connected." };
 };
 

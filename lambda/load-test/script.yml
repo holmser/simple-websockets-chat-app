@@ -1,0 +1,206 @@
+config:
+  plugins:
+    cloudwatch:
+      namespace: "ws-loadtest"
+    faker: {}
+    uuid:
+      vars: ["id1"]
+  variables:
+    # firstName: "$faker.name.firstName()"
+    firstName:
+      - "Chris"
+      - "Joe"
+      - "Ben"
+      - "Sam"
+      - "Glen"
+      - "Amit"
+      - "Gil"
+      - "Kyle"
+      - "Frank"
+      - "asdfas"
+      - "iuoupoi"
+      - "jasufaksljfs"
+      - "aklsdjf"
+      - "Kaiden"
+      - "colten"
+    lastName:
+      - "Smith"
+      - "Holmes"
+      - "Johnson"
+      - "Lavin"
+      - "Yanku"
+      - "Harris"
+      - "Franklin"
+      - "Cory"
+      - "Jones"
+      - "Cejudo"
+      - "Miller"
+      - "Difulvio"
+      - "Benson"
+    # middle:
+    #   - 1
+    #   - 2
+    #   - 3
+    #   - 4
+    #   - 5
+    #   - 6
+    #   - 7
+    #   - 8
+    #   - 9
+    #   - 10
+    #   - 12
+    #   - 13
+    #   - 14
+    #   - 15
+    uuid1: $randomString()
+    uuid2: $randomNumber(1,99999)
+    uuid3: $randomNumber(1,99999)
+    uuid4: $randomNumber(1,99999)
+    # lastName: "$faker.name.lastName"
+  target: "wss://oktank-api.evbv.me/ws"
+  # target: "https://oktank-demo.evbv.me"
+  phases:
+    - duration: 60
+      arrivalRate: 1
+      # rampTo: 50
+    # - duration: 300
+    #   arrivalRate: 50
+    #   rampTo: 100
+    # - duration: 600
+    #   arrivalRate: 100
+    #   rampTo: 200
+    # - duration: 600
+    #   arrivalRate: 200
+    #   rampTo: 300
+
+scenarios:
+  - engine: "ws"
+    flow:
+      # - send: { "message": "sendmessage" }
+      # - sleep: 5
+      - send:
+          {
+            "message": "register",
+            "userdata":
+              {
+                "name": { "first": "{{firstName}}", "last": "{{lastName}}" },
+                "uuid": "{{firstName}}-{{lastName}}",
+              },
+          }
+      - think: 10
+      - send:
+          {
+            "message": "sendmessage",
+            "payload":
+              {
+                "src":
+                  {
+                    "uuid": "{{firstName}}-{{lastName}}",
+                    "userdata":
+                      {
+                        "name":
+                          { "first": "{{firstName}}", "last": "{{lastName}}" },
+                        "uuid": "{{firstName}}-{{lastName}}",
+                      },
+                  },
+                "dest":
+                  {
+                    "uuid": "{{firstName}}-{{lastName}}",
+                    "userdata":
+                      {
+                        "name":
+                          { "first": "{{firstName}}", "last": "{{lastName}}" },
+                        "uuid": "{{firstName}}-{{lastName}}",
+                      },
+                  },
+                "text": "message 1",
+              },
+          }
+      - think: 10
+      - send:
+          {
+            "message": "sendmessage",
+            "payload":
+              {
+                "src":
+                  {
+                    "uuid": "{{firstName}}-{{lastName}}",
+                    "userdata":
+                      {
+                        "name":
+                          { "first": "{{firstName}}", "last": "{{lastName}}" },
+                        "uuid": "{{firstName}}-{{lastName}}",
+                      },
+                  },
+                "dest":
+                  {
+                    "uuid": "{{firstName}}-{{lastName}}",
+                    "userdata":
+                      {
+                        "name":
+                          { "first": "{{firstName}}", "last": "{{lastName}}" },
+                        "uuid": "{{firstName}}-{{lastName}}",
+                      },
+                  },
+                "text": "message 2",
+              },
+          }
+      - think: 10
+      - send:
+          {
+            "message": "sendmessage",
+            "payload":
+              {
+                "src":
+                  {
+                    "uuid": "{{firstName}}-{{lastName}}",
+                    "userdata":
+                      {
+                        "name":
+                          { "first": "{{firstName}}", "last": "{{lastName}}" },
+                        "uuid": "{{firstName}}-{{lastName}}",
+                      },
+                  },
+                "dest":
+                  {
+                    "uuid": "{{firstName}}-{{lastName}}",
+                    "userdata":
+                      {
+                        "name":
+                          { "first": "{{firstName}}", "last": "{{lastName}}" },
+                        "uuid": "{{firstName}}-{{lastName}}",
+                      },
+                  },
+                "text": "message 3",
+              },
+          }
+      - think: 5
+      - send:
+          {
+            "message": "sendmessage",
+            "payload":
+              {
+                "src":
+                  {
+                    "uuid": "{{firstName}}-{{lastName}}",
+                    "userdata":
+                      {
+                        "name":
+                          { "first": "{{firstName}}", "last": "{{lastName}}" },
+                        "uuid": "{{firstName}}-{{lastName}}",
+                      },
+                  },
+                "dest":
+                  {
+                    "uuid": "{{firstName}}-{{lastName}}",
+                    "userdata":
+                      {
+                        "name":
+                          { "first": "{{firstName}}", "last": "{{lastName}}" },
+                        "uuid": "{{firstName}}-{{lastName}}",
+                      },
+                  },
+                "text": "message 1",
+              },
+          }
+      - think: 5

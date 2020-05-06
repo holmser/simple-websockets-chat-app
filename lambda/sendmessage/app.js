@@ -1,27 +1,31 @@
-// Copyright 2018 Amazon.com, Inc. or its affiliates. All Rights Reserved.
-// SPDX-License-Identifier: MIT-0
 /*
-Msg -> Admin: 
+Message Structure: 
 {
   src: {
-    connId: xxxx
-    uuid: xxxxxx-xxxxxx-xxxxxx
-    userdata:
+    userdata{ 
+      connId: xxxx
+      uuid: xxxxxx-xxxxxx-xxxxxx
+      name: {
+        first: "xxx"
+        last: "xxx"
+      }
+    }
   }
   dest: {
-    connId:
-    uuid: admin | uuid
-  payload: {
-    text:
+    userdata{ 
+      connId: xxxx
+      uuid: xxxxxx-xxxxxx-xxxxxx
+    }
+  }
+  data: {
+    text: "data data data"
   }
 }
 
 */
 const AWS = require("aws-sdk");
 
-
 const DEBUG = process.env.AWS_REGION
-// const DEBUG = false
 const { TABLE_NAME } = process.env;
 
 const ddb = new AWS.DynamoDB.DocumentClient({
@@ -29,20 +33,13 @@ const ddb = new AWS.DynamoDB.DocumentClient({
   region: process.env.AWS_REGION
 });
 
-
-// if (DEBUG) {
 endpoint = "jhdk924ki7.execute-api.us-east-1.amazonaws.com/Prod/"
-// } else {
-//   endpoint = event.requestContext.domainName + "/" + event.requestContext.stage
-// }
 const apigwManagementApi = new AWS.ApiGatewayManagementApi({
   apiVersion: "2018-11-29",
   endpoint: endpoint,
 });
 
 async function storeMessage(uuid, message, ts) {
-
-  // if (DEBUG) { console.log(now) }
   const putParams = {
     TableName: process.env.TABLE_NAME,
     Item: {
@@ -51,10 +48,10 @@ async function storeMessage(uuid, message, ts) {
       SortKey: `msg:${ts}`,
     }
   };
-  console.log(await ddb.put(putParams).promise());
+  return ddb.put(putParams).promise();
 }
 
-async function getConnId(uuid) {
+function getConnId(uuid) {
   var params = {
     KeyConditionExpression: 'PartitionKey = :uuid AND begins_with(SortKey, :role)',
     ExpressionAttributeValues: {
@@ -63,48 +60,44 @@ async function getConnId(uuid) {
     },
     TableName: TABLE_NAME
   };
-
-  results = await ddb
+  return ddb
     .query(params)
     .promise();
-  console.log("AdminID: ", results.Items)
-  return results.Items[0]
+
 }
+let cache = {}
 
 exports.handler = async event => {
-  // const adminId = await getConnId("admin")
-  console.log(JSON.parse(event.body))
   const timestamp = new Date().toISOString();
-
-
-  adminId = await getConnId("admin")
-
   const payload = JSON.parse(event.body).payload;
-  if (!payload.src) {
-    payload.src = {}
-  }
+  console.log(payload)
   payload.ts = timestamp
   payload.src.connId = event.requestContext.connectionId
-
-  let uuid = payload.src.uuid === adminId.uuid ? payload.dest.uuid : payload.src.uuid
-
-  storeMessage(uuid, payload, timestamp)
-
-  console.log("new payload", payload)
+  cache[payload.src.userdata.uuid] = event.requestContext.connectionId
+  const uuid = payload.dest.userdata.uuid
   try {
-    await apigwManagementApi
-      .postToConnection({ ConnectionId: payload.dest.connId, Data: JSON.stringify(payload) })
-      .promise();
+    if (uuid in cache) {
+      console.log("CACHE HIT")
+      console.log(payload)
+      await wsSend(cache[uuid], payload)
+    } else {
+      console.log("CACHE MISS")
+      const ddbRes = await getConnId(uuid)
+      console.log("ddbRes: ", ddbRes)
+      await wsSend(ddbRes.Items[0].cid, payload)
+    }
   } catch (err) {
-    let destUuid = await getConnId(payload.dest.uuid)
-
-
-    let resp = await apigwManagementApi
-      .postToConnection({ ConnectionId: destUuid.cid, Data: JSON.stringify(payload) })
-      .promise();
-    console.log(resp)
+    console.log(err)
+    console.log("CACHE STALE")
+    ddbRes = await getConnId(uuid)
+    await wsSend(ddbRes.Items[0].cid, payload)
   }
-
-
   return { statusCode: 200, body: "Data sent." };
 };
+
+async function wsSend(destCid, payload) {
+  cache[payload.dest.userdata.uuid] = destCid
+  return apigwManagementApi
+    .postToConnection({ ConnectionId: destCid, Data: JSON.stringify(payload) })
+    .promise()
+}

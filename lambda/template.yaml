@@ -129,8 +129,8 @@ Resources:
         - AttributeName: "SortKey"
           KeyType: "RANGE"
       ProvisionedThroughput:
-        ReadCapacityUnits: 5
-        WriteCapacityUnits: 5
+        ReadCapacityUnits: 500
+        WriteCapacityUnits: 500
       SSESpecification:
         SSEEnabled: True
       TableName: !Ref TableName
@@ -188,6 +188,7 @@ Resources:
       Environment:
         Variables:
           TABLE_NAME: !Ref TableName
+          AWS_NODEJS_CONNECTION_REUSE_ENABLED: 1
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref TableName
@@ -216,6 +217,7 @@ Resources:
       Environment:
         Variables:
           TABLE_NAME: !Ref TableName
+          AWS_NODEJS_CONNECTION_REUSE_ENABLED: 1
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref TableName
