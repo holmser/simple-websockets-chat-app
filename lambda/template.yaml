@@ -150,6 +150,7 @@ Resources:
   OnConnectPermission:
     Type: AWS::Lambda::Permission
     DependsOn:
+      - AgentKey
       - SimpleChatWebSocket
       - OnConnectFunction
     Properties:
@@ -185,14 +186,27 @@ Resources:
       Handler: app.handler
       MemorySize: 256
       Runtime: nodejs12.x
+      Timeout: 10
       Environment:
         Variables:
+          KMS_ARN: !GetAtt AgentKey.Arn
           TABLE_NAME: !Ref TableName
           AWS_NODEJS_CONNECTION_REUSE_ENABLED: 1
       Policies:
+        # - KMSDecryptPolicy:
+        #     KeyId: arn:aws:kms:us-east-1:487312177614:key/7e4c889b-a23c-49cb-bc19-a45a137275ca
+        # - KMSEncryptPolicy:
+        #     KeyId: arn:aws:kms:us-east-1:487312177614:key/7e4c889b-a23c-49cb-bc19-a45a137275ca
         - DynamoDBCrudPolicy:
             TableName: !Ref TableName
         - Statement:
+            - Effect: Allow
+              Action:
+                - kms:Decrypt
+                - kms:Encrypt
+                - kms:GenerateDataKey
+              Resource:
+                - "arn:aws:kms:us-east-1:487312177614:key/7e4c889b-a23c-49cb-bc19-a45a137275ca"
             - Effect: Allow
               Action:
                 - "execute-api:ManageConnections"
@@ -207,21 +221,32 @@ Resources:
       Action: lambda:InvokeFunction
       FunctionName: !Ref SendMessageFunction
       Principal: apigateway.amazonaws.com
+
   RegisterFunction:
     Type: AWS::Serverless::Function
     Properties:
+      Timeout: 10
       CodeUri: register/
       Handler: app.handler
-      MemorySize: 256
+      MemorySize: 512
       Runtime: nodejs12.x
       Environment:
         Variables:
+          KMS_ARN: !GetAtt AgentKey.Arn
           TABLE_NAME: !Ref TableName
           AWS_NODEJS_CONNECTION_REUSE_ENABLED: 1
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref TableName
         - Statement:
+            - Effect: Allow
+              Action:
+                - kms:Decrypt
+                - kms:Encrypt
+                - kms:GenerateDataKey
+              Resource:
+                - arn:aws:kms:us-east-1:487312177614:key/aa759193-8edd-4a6a-9c6e-e0b076b1ab54
+                - arn:aws:kms:us-east-1:487312177614:key/56dfe22e-da41-4938-82a2-1eed74bd1d5c
             - Effect: Allow
               Action:
                 - "execute-api:ManageConnections"
@@ -236,6 +261,94 @@ Resources:
       Action: lambda:InvokeFunction
       FunctionName: !Ref RegisterFunction
       Principal: apigateway.amazonaws.com
+  AgentKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: Key used by agents to access data
+      Enabled: True
+      KeyPolicy:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Sub arn:aws:iam::${AWS::AccountId}:root
+            Action:
+              # Data plane actions
+              - kms:Encrypt
+              - kms:GenerateDataKey
+              # Control plane actions
+              - kms:CreateAlias
+              - kms:DeleteAlias
+              - kms:DescribeKey
+              - kms:DisableKey
+              - kms:EnableKey
+              - kms:PutKeyPolicy
+              - kms:GetKeyPolicy
+              - kms:ScheduleKeyDeletion
+              - kms:UpdateAlias
+              - kms:UpdateKeyDescription
+            Resource: "*"
+          - Effect: Allow
+            Principal:
+              AWS:
+                - !GetAtt SendMessageFunctionRole.Arn
+                - !GetAtt RegisterFunctionRole.Arn
+                - arn:aws:iam::487312177614:role/AAAAgent
+                - arn:aws:iam::487312177614:role/AAACustomer
+            Action:
+              - kms:Decrypt
+              - kms:Encrypt
+              - kms:GenerateDataKey
+            Resource: "*"
+  AgentKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Sub alias/AgentKey
+      TargetKeyId: !Ref AgentKey
+  CustomerKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: Key used by customers
+      Enabled: True
+      KeyPolicy:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Sub arn:aws:iam::${AWS::AccountId}:root
+            Action:
+              # Data plane actions
+              - kms:Encrypt
+              - kms:GenerateDataKey
+              # Control plane actions
+              - kms:CreateAlias
+              - kms:DeleteAlias
+              - kms:DescribeKey
+              - kms:DisableKey
+              - kms:EnableKey
+              - kms:PutKeyPolicy
+              - kms:GetKeyPolicy
+              - kms:ScheduleKeyDeletion
+              - kms:UpdateAlias
+              - kms:UpdateKeyDescription
+            Resource: "*"
+          - Effect: Allow
+            Principal:
+              AWS:
+                - !GetAtt SendMessageFunctionRole.Arn
+                - !GetAtt RegisterFunctionRole.Arn
+                - arn:aws:iam::487312177614:role/AAAAgent
+                - arn:aws:iam::487312177614:role/AAACustomer
+            Action:
+              - kms:Decrypt
+              - kms:Encrypt
+              - kms:GenerateDataKey
+            Resource: "*"
+  CustomerKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Sub alias/CustomerKey
+      TargetKeyId: !Ref CustomerKey
 
 Outputs:
   ConnectionsTableArn:
@@ -272,3 +385,9 @@ Outputs:
           !Ref "Stage",
         ],
       ]
+  CustomerKey:
+    Description: "Customer Key"
+    Value: !GetAtt CustomerKey.Arn
+  AgentKey:
+    Description: "Agent Key"
+    Value: !GetAtt AgentKey.Arn

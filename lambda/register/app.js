@@ -3,23 +3,29 @@ const AWS = require("aws-sdk");
 const https = require("https");
 var jwkToPem = require('jwk-to-pem');
 const log = require('lambda-log-json');
+const { KmsKeyringNode, encrypt, decrypt } = require("@aws-crypto/client-node");
 
 const ddb = new AWS.DynamoDB.DocumentClient({
   apiVersion: "2012-08-10",
   region: process.env.AWS_REGION
 });
 const { TABLE_NAME, DEBUG } = process.env;
+const generatorKeyId = process.env.KMS_ARN
+const keyIds = [process.env.KMS_ARN]
+const keyring = new KmsKeyringNode({ generatorKeyId, keyIds })
+// const masterKeyId = "arn:aws:kms:us-east-1:487312177614:key/73eeb0b7-5569-4c51-b899-5eb922a34cd4";
+// const keyring = new KmsKeyringNode({ masterKeyId });
 // let endpoint, event
 // // if (DEBUG) {
-// endpoint = "jhdk924ki7.execute-api.us-east-1.amazonaws.com/Prod/"
+endpoint = "jhdk924ki7.execute-api.us-east-1.amazonaws.com/Prod/"
 // } else {
 //   endpoint = event.requestContext.domainName + "/" + event.requestContext.stage
 // }
 
-// const apigwManagementApi = new AWS.ApiGatewayManagementApi({
-//   apiVersion: "2018-11-29",
-//   endpoint: endpoint
-// });
+const apigwManagementApi = new AWS.ApiGatewayManagementApi({
+  apiVersion: "2018-11-29",
+  endpoint: endpoint
+});
 
 async function httpGet(url, callback, jwtToken) {
   return new Promise((resolve, reject) => {
@@ -63,14 +69,7 @@ async function getHistory(uuid) {
       ":msg": "msg:",
     }
   };
-  // let params = {
-  //   KeyConditionExpression: 'PartitionKey = :role AND begins_with ( SortKey , :connid )',
-  //   ExpressionAttributeValues: {
-  //     ':role': "role:ADMIN",
-  //     ':connid': "cid"
-  //   },
-  //   TableName: TABLE_NAME
-  // };
+
   connId = await getConnId('admin')
   log.info(connId.cid)
   results = await ddb
@@ -121,14 +120,22 @@ exports.handler = async event => {
   let item;
   let adminData
   let items = []
+  console.log(process.env.KMS_ARN)
 
+  const cryptoContext = {
+    stage: 'demo',
+    purpose: 'encrypt userdata from registration',
+    origin: 'us-east-1'
+  }
 
   try {
     // log.info(event)
     const decodedToken = jwt.decode(JSON.parse(event.body).token, { complete: true });
     //log.info("decoded Token ", decodedToken)
     token = JSON.parse(event.body).token
-    log.info("Validated Token: ", await validateJwt(token))
+    try {
+      log.info("Validated Token: ", await validateJwt(token))
+    } catch (err) { }
     // log.info("Admin Registration Detected: ", decodedToken)
     log.info("success")
     // await writeToDdb("admin", "admin", event.requestContext.connectionId)
@@ -153,18 +160,21 @@ exports.handler = async event => {
     log.info(err)
     log.info("fail")
     data = JSON.parse(event.body)
-    // log.info(data)
+    const cyphertext = await encrypt(keyring, JSON.stringify(data.userdata), { encryptionContext: cryptoContext })
     await ddb.put({
       TableName: process.env.TABLE_NAME,
       Item: {
         PartitionKey: `uuid:${data.userdata.uuid}`,
-        name: data.userdata.name,
+        // name: data.userdata.name,
         cid: event.requestContext.connectionId,
+        userdata: cyphertext.result,
         SortKey: `role:user`,
       }
     }).promise()
-
+    // const plaintext = await decrypt(keyring, cyphertext.result)
+    console.log(JSON.parse(plaintext.plaintext.toString()))
   }
   return { statusCode: 200, body: "Connected." };
 };
 
+//Register

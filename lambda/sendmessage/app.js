@@ -24,6 +24,7 @@ Message Structure:
 
 */
 const AWS = require("aws-sdk");
+const { KmsKeyringNode, encrypt, decrypt } = require("@aws-crypto/client-node");
 
 const DEBUG = process.env.AWS_REGION
 const { TABLE_NAME } = process.env;
@@ -65,30 +66,44 @@ function getConnId(uuid) {
     .promise();
 
 }
-let cache = {}
 
+let cache = {}
+function enrichPayload(event, payload) {
+  // console.log(payload)
+  payload.ts = timestamp
+  payload.src.connId = event.requestContext.connectionId
+  cache[payload.src.userdata.uuid] = event.requestContext.connectionId
+  return payload
+}
 exports.handler = async event => {
   const timestamp = new Date().toISOString();
   const payload = JSON.parse(event.body).payload;
-  console.log(payload)
+  // console.log(payload)
   payload.ts = timestamp
   payload.src.connId = event.requestContext.connectionId
   cache[payload.src.userdata.uuid] = event.requestContext.connectionId
   const uuid = payload.dest.userdata.uuid
+
+  // console.log("plaintext: ", JSON.stringify(payload))
+  // const { result } = await encrypt(keyring, JSON.stringify(payload));
+  // console.log("cyphertext", result.toString())
+  // const { result } = await decrypt(ciphertext);
+  // const { plaintext, messageHeader } = await decrypt(keyring, result)
+  // console.log("plaintext: ", plaintext, messageHeader)
   try {
     if (uuid in cache) {
-      console.log("CACHE HIT")
+      // console.log("CACHE HIT")
       console.log(payload)
       await wsSend(cache[uuid], payload)
     } else {
-      console.log("CACHE MISS")
+      // console.log("CACHE MISS")
       const ddbRes = await getConnId(uuid)
-      console.log("ddbRes: ", ddbRes)
+      // console.log("ddbRes: ", ddbRes)
       await wsSend(ddbRes.Items[0].cid, payload)
     }
   } catch (err) {
-    console.log(err)
-    console.log("CACHE STALE")
+    // console.log(err)
+    // console.log("CACHE STALE")
     ddbRes = await getConnId(uuid)
     await wsSend(ddbRes.Items[0].cid, payload)
   }
