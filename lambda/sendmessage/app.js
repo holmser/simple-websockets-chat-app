@@ -78,18 +78,35 @@ function enrichPayload(event, payload) {
 exports.handler = async event => {
   const timestamp = new Date().toISOString();
   const payload = JSON.parse(event.body).payload;
-  // console.log(payload)
+  console.log(payload)
   payload.ts = timestamp
   payload.src.connId = event.requestContext.connectionId
-  cache[payload.src.userdata.uuid] = event.requestContext.connectionId
-  const uuid = payload.dest.userdata.uuid
+  cache[payload.src.uuid] = event.requestContext.connectionId
+  const uuid = payload.dest.uuid
 
-  // console.log("plaintext: ", JSON.stringify(payload))
-  // const { result } = await encrypt(keyring, JSON.stringify(payload));
-  // console.log("cyphertext", result.toString())
-  // const { result } = await decrypt(ciphertext);
-  // const { plaintext, messageHeader } = await decrypt(keyring, result)
-  // console.log("plaintext: ", plaintext, messageHeader)
+  // {
+  //   payload: {
+  //     source: {
+  //       uuid: "uuid"
+  //     },
+  //     dest: {
+  //       uuid: "uuid"
+  //     },
+  //     data: { 
+  //       // start encryption
+  //       text: "this is a sample message",
+  //       userdata: {
+  //         first: "firstName",
+  //         last: "lastName",
+  //         uuid: "xxxxx-xxxxx-xxxx-xxxxxxx"
+  //       }
+  //       // end encryption
+  //     },
+  //     control: "join|leave|success|error"
+  //   },
+  //   checksum: "qwelrkqweroqwerpiouqewroiqwerkj"
+  // }
+
   try {
     if (uuid in cache) {
       // console.log("CACHE HIT")
@@ -104,14 +121,23 @@ exports.handler = async event => {
   } catch (err) {
     // console.log(err)
     // console.log("CACHE STALE")
-    ddbRes = await getConnId(uuid)
-    await wsSend(ddbRes.Items[0].cid, payload)
+    try {
+      ddbRes = await getConnId(uuid)
+      await wsSend(ddbRes.Items[0].cid, payload)
+    } catch (e) {
+      if (e.errorMessage === "410") {
+        console.log("user unavailable")
+      } else {
+        console.log(err)
+      }
+    }
   }
   return { statusCode: 200, body: "Data sent." };
 };
 
 async function wsSend(destCid, payload) {
-  cache[payload.dest.userdata.uuid] = destCid
+  cache[payload.dest.uuid] = destCid
+  console.log(payload)
   return apigwManagementApi
     .postToConnection({ ConnectionId: destCid, Data: JSON.stringify(payload) })
     .promise()

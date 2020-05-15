@@ -184,7 +184,7 @@ Resources:
     Properties:
       CodeUri: sendmessage/
       Handler: app.handler
-      MemorySize: 256
+      MemorySize: 128
       Runtime: nodejs12.x
       Timeout: 10
       Environment:

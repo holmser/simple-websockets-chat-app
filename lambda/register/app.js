@@ -95,9 +95,9 @@ async function validateJwt(token) {
   //log.info(jwtKeys)
 
   signingKey = jwtKeys.keys.find(key => key.kid === test.header.kid)
-  log.info("signingKey", signingKey)
+  // log.info("signingKey", signingKey)
   var pem = jwkToPem(signingKey);
-  log.info(pem)
+  // log.info(pem)
   validate = jwt.verify(token, pem, { algorithms: ['RS256'] })
   return validate
 
@@ -133,26 +133,33 @@ exports.handler = async event => {
     const decodedToken = jwt.decode(JSON.parse(event.body).token, { complete: true });
     //log.info("decoded Token ", decodedToken)
     token = JSON.parse(event.body).token
+    let role
     try {
       log.info("Validated Token: ", await validateJwt(token))
-    } catch (err) { }
+      console.log(decodedToken.payload['cognito:groups'])
+      role = decodedToken.payload['cognito:groups'].includes("agent") ? "admin" : "user"
+    } catch (err) { role = 'user' }
+
     // log.info("Admin Registration Detected: ", decodedToken)
-    log.info("success")
+    console.log("success")
     // await writeToDdb("admin", "admin", event.requestContext.connectionId)
-    await ddb.put({
-      TableName: process.env.TABLE_NAME,
-      Item: {
-        PartitionKey: `uuid:admin`,
-        SortKey: `role:admin`,
-        cid: event.requestContext.connectionId,
-        uuid: `${decodedToken.payload.sub}`
-      }
-    }).promise()
+    console.log(role)
+    if (role === 'admin') {
+      await ddb.put({
+        TableName: process.env.TABLE_NAME,
+        Item: {
+          PartitionKey: `uuid:admin`,
+          SortKey: `role:${role}`,
+          cid: event.requestContext.connectionId,
+          uuid: `${decodedToken.payload.sub}`
+        }
+      }).promise()
+    }
     await ddb.put({
       TableName: process.env.TABLE_NAME,
       Item: {
         PartitionKey: `uuid:${decodedToken.payload.sub}`,
-        SortKey: `role:admin`,
+        SortKey: `role:${role}`,
         cid: event.requestContext.connectionId,
       }
     }).promise()
